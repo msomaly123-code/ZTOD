@@ -30,6 +30,7 @@ import {
   FaClipboardList,
   FaMoneyBillWave,
   FaCalendarAlt,
+  FaEyeSlash,
 } from 'react-icons/fa';
 import RecepionistSideNavbar from './RecepionistSideNavbar';
 
@@ -53,6 +54,24 @@ const ReceptionistCustomers = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVariant, setToastVariant] = useState('success');
+
+  // Edit Modal States
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    customerid: '',
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    houseno: '',
+    status: 'active',
+    password: '',
+    confirmPassword: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
 
   const showToastNotification = (message, variant = 'success') => {
     setToastMessage(message);
@@ -192,13 +211,139 @@ const ReceptionistCustomers = () => {
     }
   };
 
+  // ✅ Open Edit Modal with customer data
+  const handleEditClick = (customer) => {
+    setEditFormData({
+      customerid: customer.customerid,
+      name: customer.name || '',
+      email: customer.email || '',
+      phone: customer.phone || '',
+      address: customer.address || '',
+      houseno: customer.houseno || '',
+      status: customer.status || 'active',
+      password: '',
+      confirmPassword: ''
+    });
+    setPasswordError('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    setShowEditModal(true);
+  };
+
+  // ✅ Handle Edit Form Changes
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    setEditFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Validate password
+    if (name === 'password' || name === 'confirmPassword') {
+      validatePasswordFields(name, value);
+    }
+  };
+
+  // ✅ Validate Password Fields
+  const validatePasswordFields = (fieldName, value) => {
+    const password = fieldName === 'password' ? value : editFormData.password;
+    const confirmPassword = fieldName === 'confirmPassword' ? value : editFormData.confirmPassword;
+    
+    if (password || confirmPassword) {
+      if (password && password.length < 6) {
+        setPasswordError('Password must be at least 6 characters');
+      } else if (password && confirmPassword && password !== confirmPassword) {
+        setPasswordError('Passwords do not match');
+      } else {
+        setPasswordError('');
+      }
+    } else {
+      setPasswordError('');
+    }
+  };
+
+  // ✅ Submit Edit Form
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(editFormData.email)) {
+        showToastNotification('❌ Please enter a valid email address', 'danger');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate phone (basic)
+      if (editFormData.phone && editFormData.phone.length < 10) {
+        showToastNotification('❌ Please enter a valid phone number (10 digits)', 'danger');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate password if provided
+      if (editFormData.password) {
+        if (editFormData.password.length < 6) {
+          showToastNotification('❌ Password must be at least 6 characters', 'danger');
+          setIsSubmitting(false);
+          return;
+        }
+        if (editFormData.password !== editFormData.confirmPassword) {
+          showToastNotification('❌ Passwords do not match', 'danger');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      const payload = {
+        name: editFormData.name,
+        email: editFormData.email,
+        phone: editFormData.phone,
+        address: editFormData.address || '',
+        houseno: editFormData.houseno || '',
+        status: editFormData.status
+      };
+
+      // Add password if provided
+      if (editFormData.password) {
+        payload.password = editFormData.password;
+      }
+
+      console.log('📤 Updating customer with payload:', payload);
+
+      // ✅ Use the custom action endpoint
+      const response = await fetch(`http://localhost:8000/api/customers/${editFormData.customerid}/update_customer/`, {
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.message || 'Failed to update customer');
+      }
+      
+      const data = await response.json();
+      console.log('✅ Customer updated:', data);
+
+      setShowEditModal(false);
+      fetchCustomers();
+      showToastNotification('✅ Customer updated successfully!', 'success');
+    } catch (error) {
+      console.error('Error updating customer:', error);
+      showToastNotification(`❌ ${error.message || 'Failed to update customer'}`, 'danger');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // ✅ Navigate to Customer Details Page
   const handleViewCustomer = (customerId) => {
     navigate(`/ReceptionistCustomerDetail/${customerId}`);
-  };
-
-  const handleEditCustomer = (customerId) => {
-    navigate(`/receptionist/customers/edit/${customerId}`);
   };
 
   const getStatusBadge = (status) => {
@@ -485,7 +630,7 @@ const ReceptionistCustomers = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1 sm:gap-2">
-                        {/* ✅ Eye Icon - View Customer Details */}
+                        {/* ✅ View Button */}
                         <button
                           onClick={() => handleViewCustomer(customer.customerid)}
                           className="p-1.5 sm:p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition group"
@@ -493,6 +638,15 @@ const ReceptionistCustomers = () => {
                         >
                           <FaEye className="group-hover:scale-110 transition-transform" />
                         </button>
+                        {/* ✅ Edit Button */}
+                        <button
+                          onClick={() => handleEditClick(customer)}
+                          className="p-1.5 sm:p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition group"
+                          title="Edit Customer"
+                        >
+                          <FaEdit className="group-hover:scale-110 transition-transform" />
+                        </button>
+                        {/* ✅ Delete Button */}
                         <button
                           onClick={() => {
                             setSelectedCustomer(customer);
@@ -564,6 +718,230 @@ const ReceptionistCustomers = () => {
           </div>
         )}
       </div>
+
+      {/* ─── EDIT CUSTOMER MODAL WITH PASSWORD ─── */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-fadeInUp p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                    <FaEdit className="text-amber-600 text-lg" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">Edit Customer</h3>
+                    <p className="text-sm text-gray-500">Update customer information</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition"
+                >
+                  <FaTimes className="text-xl" />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditSubmit} className="space-y-4">
+                {/* Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <FaUser className="inline mr-2 text-gray-400" /> Full Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="name"
+                    value={editFormData.name}
+                    onChange={handleEditChange}
+                    required
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    placeholder="Enter full name"
+                  />
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <FaEnvelope className="inline mr-2 text-gray-400" /> Email <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={editFormData.email}
+                    onChange={handleEditChange}
+                    required
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    placeholder="Enter email address"
+                  />
+                </div>
+
+                {/* Phone */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <FaPhone className="inline mr-2 text-gray-400" /> Phone Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={editFormData.phone}
+                    onChange={handleEditChange}
+                    required
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    placeholder="Enter phone number"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Format: 0712345678 (10 digits)</p>
+                </div>
+
+                {/* Address */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <FaMapMarkerAlt className="inline mr-2 text-gray-400" /> Address
+                  </label>
+                  <input
+                    type="text"
+                    name="address"
+                    value={editFormData.address || ''}
+                    onChange={handleEditChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    placeholder="Enter address"
+                  />
+                </div>
+
+                {/* House No */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <FaHome className="inline mr-2 text-gray-400" /> House No
+                  </label>
+                  <input
+                    type="text"
+                    name="houseno"
+                    value={editFormData.houseno || ''}
+                    onChange={handleEditChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    placeholder="Enter house number"
+                  />
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <FaCheckCircle className="inline mr-2 text-gray-400" /> Status
+                  </label>
+                  <select
+                    name="status"
+                    value={editFormData.status}
+                    onChange={handleEditChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition bg-white"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+
+                {/* ─── PASSWORD SECTION ─── */}
+                <div className="border-t border-gray-200 pt-4 mt-2">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FaLock className="text-amber-600" />
+                    <span className="text-sm font-semibold text-gray-700">Update Password</span>
+                    <span className="text-xs text-gray-400">(optional)</span>
+                  </div>
+
+                  {/* New Password */}
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      New Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        name="password"
+                        value={editFormData.password}
+                        onChange={handleEditChange}
+                        className={`w-full px-4 py-2.5 pr-12 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${
+                          passwordError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-gray-300'
+                        }`}
+                        placeholder="Enter new password (min 6 chars)"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+                      >
+                        {showPassword ? <FaEyeSlash /> : <FaEye />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Confirm Password */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Confirm New Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        name="confirmPassword"
+                        value={editFormData.confirmPassword}
+                        onChange={handleEditChange}
+                        className={`w-full px-4 py-2.5 pr-12 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${
+                          passwordError ? 'border-red-500 ring-2 ring-red-500/20' : 'border-gray-300'
+                        }`}
+                        placeholder="Confirm new password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+                      >
+                        {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Password Error Message */}
+                  {passwordError && (
+                    <div className="mt-2 flex items-center gap-1 text-red-500 text-xs">
+                      <FaExclamationTriangle className="text-xs" />
+                      <span>{passwordError}</span>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">
+                    Leave password fields blank to keep current password
+                  </p>
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditModal(false)}
+                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !!passwordError}
+                    className="flex-1 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-700 text-white rounded-lg hover:from-amber-700 hover:to-amber-800 transition font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <FaSpinner className="animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <FaSave />
+                        Save Changes
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && selectedCustomer && (
